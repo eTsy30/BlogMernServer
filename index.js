@@ -1,12 +1,24 @@
 import express from "express";
-import jwt from "jsonwebtoken";
-import bcrypt from 'bcrypt'
+import multer from "multer";
 import mongoose from "mongoose";
-import { registerValidation } from "./validations/auth.js";
-import { validationResult } from "express-validator";
-import UserModel from './models/User.js';
+import {
+  registerValidation,
+  loginValidation,
+  postCreateValidation,
+} from "./validations/validation.js";
+import checkAuth from "./utils/checkAuth.js";
+import { register, login, getMe} from "./controllers/UserController.js";
+import {
+  create,
+  getAll,
+  getOne,
+  delite,
+  update
+} from "./controllers/PostController.js";
+import handleValidationsErrors from './utils/handleValidationsErrors.js'
 
-mongoose.set('strictQuery', true);
+
+mongoose.set("strictQuery", true);
 mongoose
   .connect(
     "mongodb+srv://admin:admin@cluster0.ffddjda.mongodb.net/blog?retryWrites=true&w=majority"
@@ -15,63 +27,36 @@ mongoose
   .catch((error) => console.log("Db error", error));
 
 const app = express();
+//загрузка картинок создаем storage
+const storage= multer.diskStorage({
+  destination:(_, __, cb)=>{
+    cb(null,'uploads');
+  },
+  filename:(_, file, cb)=>{
+    cb(null,file.originalname)
+  }
+})
+ const uploads=multer({storage})
+
 
 app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.send("Hello wodld");
-});
 
-app.post("/auth/login", (req, res) => {
-  console.log(req.body, "**************************");
-  //отправка и шифровка jwt на основе данных
-  const token = jwt.sign(
-    {
-      email: req.body.email,
-    },
-    "secfret"
-  );
-  //ответ для клиента
+app.use('/uploads',express.static('uploads'))
+app.post('/upload',checkAuth ,uploads.single('image'),(req,res)=>{
   res.json({
-    success: true,
-    token,
-  });
-});
- 
-app.post("/auth/register", registerValidation, async (req, res) => {
-   try {
-    const error= validationResult(req)
-   console.log(error);
-  if(!error.isEmpty()){
-    return res.status(400).json(error.array())
-  }
- 
-  //шифруем пароль с помощью соли
-  const password= req.body.password
-  const salt= await bcrypt.genSalt(10)
-  const passwordHash= await bcrypt.hash(password,salt)
-
-
-  //создание пользователя с помощю mongoDB
-  const doc= new UserModel({
-    email:req.body.email,
-    password:passwordHash,
-    fullName:req.body.fullName,
-    avatarUrl:req.body.avatarUrl
+    url:`/uploads/${req.file.originalname}`
   })
-  // сохраням нащ doc  документ в базе данных
-
-  const user= await doc.save()
-  console.log(doc,'doc');
-  res.json({
-    success:true,user
-  })
-   } catch (error) {
-    res.status(500).json({
-      messege: 'не удалось зарегестрировать пользователя' 
-    })
-   }
 })
+app.post("/auth/login",loginValidation, handleValidationsErrors, login);
+app.post("/auth/register",handleValidationsErrors, registerValidation, register);
+app.get("/auth/me", checkAuth, getMe);
+
+app.get("/post", getAll);
+app.get("/post/:id", getOne);
+app.post("/post", checkAuth, handleValidationsErrors, postCreateValidation, create);
+app.delete("/post/:id",checkAuth, delite);
+app.patch("/post/:id",checkAuth,postCreateValidation,  handleValidationsErrors,update);
 
 app.listen(4444, (err) => {
   if (err) {
